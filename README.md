@@ -5,8 +5,9 @@ ClimbLog is a simple climbing session tracker that helps users record their gym 
 ## Features
 
 - Add climbing sessions with date, gym name, duration, highest grade, condition, and notes.
-- Attach a climbing problem video to a session with Firebase Storage.
+- Optionally attach a climbing problem video to a session with Firebase Storage.
 - View saved sessions sorted by newest date first.
+- Browse public sessions from other climbers.
 - Edit saved session details.
 - Mark sessions as public or private.
 - Delete sessions from the log.
@@ -48,6 +49,7 @@ VITE_FIREBASE_PROJECT_ID=...
 VITE_FIREBASE_STORAGE_BUCKET=...
 VITE_FIREBASE_MESSAGING_SENDER_ID=...
 VITE_FIREBASE_APP_ID=...
+VITE_ENABLE_VIDEO_UPLOAD=false
 ```
 
 The app stores climbing logs in a Firestore collection named `sessions`.
@@ -119,11 +121,13 @@ service cloud.firestore {
 }
 ```
 
-The public feed feature can be added later by querying sessions where `visibility == "public"`.
+The public feed reads sessions where `visibility == "public"`, while private sessions stay visible only to their owner.
 
 ## Storage Setup
 
 In Firebase Console, open Storage and create a default bucket. Firebase's current Cloud Storage setup may require the pay-as-you-go Blaze plan before a bucket can be created or used.
+
+Video upload is disabled by default. Set `VITE_ENABLE_VIDEO_UPLOAD=true` only after Firebase Storage is ready.
 
 The app uploads videos to:
 

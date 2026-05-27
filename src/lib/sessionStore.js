@@ -52,6 +52,25 @@ export async function subscribeToFirebaseSessions(userId, onData, onError) {
   );
 }
 
+export async function subscribeToPublicFirebaseSessions(onData, onError) {
+  const services = await getFirebaseServices();
+  if (!services) return () => {};
+
+  const { db, collection, onSnapshot, query, where } = services;
+  const publicSessionsQuery = query(
+    collection(db, SESSIONS_COLLECTION),
+    where("visibility", "==", "public"),
+  );
+
+  return onSnapshot(
+    publicSessionsQuery,
+    (snapshot) => {
+      onData(snapshot.docs.map(normalizeFirestoreSession));
+    },
+    onError,
+  );
+}
+
 export async function addFirebaseSession(session) {
   const services = await getFirebaseServices();
   if (!services) return;

@@ -38,6 +38,7 @@ import {
   addFirebaseSession,
   deleteAllFirebaseSessions,
   deleteFirebaseSession,
+  subscribeToPublicFirebaseSessions,
   subscribeToFirebaseSessions,
   updateFirebaseSession,
   updateFirebaseSessionUserName,
@@ -166,6 +167,8 @@ function App() {
   const [sessions, setSessions] = useState(() =>
     hasFirebaseConfig ? [] : loadSessions(),
   );
+  const [publicSessions, setPublicSessions] = useState([]);
+  const [recordView, setRecordView] = useState("mine");
   const [form, setForm] = useState(emptyForm);
   const [authForm, setAuthForm] = useState(emptyAuthForm);
   const [authMode, setAuthMode] = useState("login");
@@ -180,6 +183,7 @@ function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(hasFirebaseConfig);
   const [isAuthWorking, setIsAuthWorking] = useState(false);
   const [isLoading, setIsLoading] = useState(hasFirebaseConfig);
+  const [isPublicLoading, setIsPublicLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -292,10 +296,81 @@ function App() {
     };
   }, [currentUser?.uid]);
 
+  useEffect(() => {
+    if (!hasFirebaseConfig) return undefined;
+
+    if (!currentUser) {
+      setPublicSessions([]);
+      setIsPublicLoading(false);
+      return undefined;
+    }
+
+    let unsubscribe = () => {};
+    let isMounted = true;
+
+    setIsPublicLoading(true);
+
+    subscribeToPublicFirebaseSessions(
+      (nextSessions) => {
+        if (!isMounted) return;
+        setPublicSessions(nextSessions);
+        setIsPublicLoading(false);
+      },
+      () => {
+        if (!isMounted) return;
+        setErrorMessage(
+          "공개 피드를 불러오지 못했습니다. Firebase Rules의 공개 읽기 권한을 확인해주세요.",
+        );
+        setIsPublicLoading(false);
+      },
+    )
+      .then((nextUnsubscribe) => {
+        if (!isMounted) {
+          nextUnsubscribe();
+          return;
+        }
+
+        unsubscribe = nextUnsubscribe;
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setErrorMessage(
+          "공개 피드 연결을 초기화하지 못했습니다. Firebase Rules의 공개 읽기 권한을 확인해주세요.",
+        );
+        setIsPublicLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [currentUser?.uid]);
+
   const sortedSessions = useMemo(
     () => [...sessions].sort(compareSessions),
     [sessions],
   );
+
+  const sortedPublicSessions = useMemo(
+    () => [...publicSessions].sort(compareSessions),
+    [publicSessions],
+  );
+
+  const publicFeedSessions = useMemo(() => {
+    const sessionMap = new Map();
+
+    sortedPublicSessions.forEach((session) => {
+      sessionMap.set(session.id, session);
+    });
+
+    sortedSessions
+      .filter((session) => session.visibility === "public")
+      .forEach((session) => {
+        sessionMap.set(session.id, session);
+      });
+
+    return [...sessionMap.values()].sort(compareSessions);
+  }, [sortedPublicSessions, sortedSessions]);
 
   const stats = useMemo(() => {
     const now = new Date();
@@ -467,6 +542,8 @@ function App() {
     try {
       await signOutAccount();
       setSessions([]);
+      setPublicSessions([]);
+      setRecordView("mine");
       setDeletePassword("");
       setEditingSessionId("");
       setForm({ ...emptyForm, date: getToday() });
@@ -506,6 +583,8 @@ function App() {
       await deleteAllFirebaseSessions(currentUser.uid);
       await deleteAccount(deletePassword);
       setSessions([]);
+      setPublicSessions([]);
+      setRecordView("mine");
       setCurrentUser(null);
       setDeletePassword("");
       setEditingSessionId("");
@@ -668,6 +747,12 @@ function App() {
     isSaving ||
     isFirebaseSignedOut ||
     (Boolean(videoFile) && !hasFirebaseStorageConfig);
+  const displayedSessions =
+    recordView === "public" ? publicFeedSessions : sortedSessions;
+  const isRecordListLoading =
+    recordView === "public" ? isPublicLoading : isLoading;
+  const recordListTitle =
+    recordView === "public" ? "공개 피드" : "기록 목록";
 
   return (
     <main className="min-h-screen bg-stone-50 text-zinc-950">
@@ -1198,13 +1283,44 @@ function App() {
 
           <section className="min-w-0">
             <div className="mb-4 flex min-h-10 items-center justify-between gap-3">
-              <h2 className="text-xl font-black tracking-normal">기록 목록</h2>
-              <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-sm font-black text-zinc-500">
-                최신순
-              </span>
+              <div>
+                <h2 className="text-xl font-black tracking-normal">
+                  {recordListTitle}
+                </h2>
+                <p className="mt-1 text-sm font-bold text-zinc-500">
+                  최신순
+                </p>
+              </div>
+              <div className="inline-flex rounded-lg border border-zinc-200 bg-white p-1 shadow-sm">
+                <button
+                  className={`inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-black transition ${
+                    recordView === "mine"
+                      ? "bg-zinc-950 text-white"
+                      : "text-zinc-500 hover:text-zinc-900"
+                  }`}
+                  type="button"
+                  onClick={() => setRecordView("mine")}
+                >
+                  <User className="h-4 w-4" aria-hidden="true" />
+                  내 기록
+                </button>
+                <button
+                  className={`inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-black transition ${
+                    recordView === "public"
+                      ? "bg-zinc-950 text-white"
+                      : "text-zinc-500 hover:text-zinc-900"
+                  }`}
+                  type="button"
+                  onClick={() => setRecordView("public")}
+                  disabled={isFirebaseSignedOut}
+                >
+                  <Globe2 className="h-4 w-4" aria-hidden="true" />
+                  공개 피드
+                </button>
+              </div>
             </div>
 
-            {isLoading ? (
+            {isRecordListLoading ? (
               <div className="grid min-h-80 place-items-center rounded-lg border border-zinc-200 bg-white p-8 text-center shadow-sm">
                 <div>
                   <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-lg bg-cyan-100 text-cyan-700">
@@ -1215,9 +1331,13 @@ function App() {
                   </p>
                 </div>
               </div>
-            ) : sortedSessions.length > 0 ? (
+            ) : displayedSessions.length > 0 ? (
               <div className="grid gap-3">
-                {sortedSessions.map((session) => (
+                {displayedSessions.map((session) => {
+                  const canManageSession =
+                    !hasFirebaseConfig || session.userId === currentUser?.uid;
+
+                  return (
                   <article
                     className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm"
                     key={session.id}
@@ -1256,6 +1376,12 @@ function App() {
                           {session.gym}
                         </h3>
                         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm font-bold text-zinc-500">
+                          {recordView === "public" && (
+                            <span className="inline-flex items-center gap-1">
+                              <User className="h-4 w-4" aria-hidden="true" />
+                              {session.userName || "Climber"}
+                            </span>
+                          )}
                           <span className="inline-flex items-center gap-1">
                             <Clock3 className="h-4 w-4" aria-hidden="true" />
                             {session.duration}분
@@ -1294,29 +1420,32 @@ function App() {
                           </div>
                         )}
                       </div>
-                      <div className="flex gap-2 md:flex-col">
-                        <button
-                          className="grid h-11 w-11 place-items-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-cyan-200 hover:bg-cyan-50 hover:text-cyan-700 focus:outline-none focus:ring-4 focus:ring-cyan-100"
-                          type="button"
-                          onClick={() => startEditSession(session)}
-                          aria-label={`${session.gym} 기록 수정`}
-                          title="수정"
-                        >
-                          <Pencil className="h-5 w-5" aria-hidden="true" />
-                        </button>
-                        <button
-                          className="grid h-11 w-11 place-items-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-4 focus:ring-rose-100"
-                          type="button"
-                          onClick={() => deleteSession(session.id)}
-                          aria-label={`${session.gym} 기록 삭제`}
-                          title="삭제"
-                        >
-                          <Trash2 className="h-5 w-5" aria-hidden="true" />
-                        </button>
-                      </div>
+                      {canManageSession && (
+                        <div className="flex gap-2 md:flex-col">
+                          <button
+                            className="grid h-11 w-11 place-items-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-cyan-200 hover:bg-cyan-50 hover:text-cyan-700 focus:outline-none focus:ring-4 focus:ring-cyan-100"
+                            type="button"
+                            onClick={() => startEditSession(session)}
+                            aria-label={`${session.gym} 기록 수정`}
+                            title="수정"
+                          >
+                            <Pencil className="h-5 w-5" aria-hidden="true" />
+                          </button>
+                          <button
+                            className="grid h-11 w-11 place-items-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-4 focus:ring-rose-100"
+                            type="button"
+                            onClick={() => deleteSession(session.id)}
+                            aria-label={`${session.gym} 기록 삭제`}
+                            title="삭제"
+                          >
+                            <Trash2 className="h-5 w-5" aria-hidden="true" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </article>
-                ))}
+                );
+                })}
               </div>
             ) : (
               <div className="grid min-h-80 place-items-center rounded-lg border border-dashed border-zinc-300 bg-white p-8 text-center shadow-sm">
@@ -1325,10 +1454,14 @@ function App() {
                     <Mountain className="h-7 w-7" aria-hidden="true" />
                   </div>
                   <p className="text-lg font-black text-zinc-900">
-                    아직 기록이 없습니다
+                    {recordView === "public"
+                      ? "아직 공개 기록이 없습니다"
+                      : "아직 기록이 없습니다"}
                   </p>
                   <p className="mt-2 text-sm font-semibold text-zinc-500">
-                    {isFirebaseSignedOut
+                    {recordView === "public"
+                      ? "공개로 저장한 기록이 여기에 모입니다."
+                      : isFirebaseSignedOut
                       ? "로그인하면 내 기록이 표시됩니다."
                       : "첫 세션을 저장하면 통계가 바로 업데이트됩니다."}
                   </p>
