@@ -45,6 +45,7 @@ export function getFirebaseServices() {
         getDocs: firestoreModule.getDocs,
         onSnapshot: firestoreModule.onSnapshot,
         query: firestoreModule.query,
+        updateDoc: firestoreModule.updateDoc,
         where: firestoreModule.where,
         writeBatch: firestoreModule.writeBatch,
       };

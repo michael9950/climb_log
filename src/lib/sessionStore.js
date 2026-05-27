@@ -28,6 +28,7 @@ function normalizeFirestoreSession(documentSnapshot) {
     videoSize: Number(data.videoSize) || 0,
     videoContentType: data.videoContentType || "",
     createdAt: data.createdAt || new Date(0).toISOString(),
+    updatedAt: data.updatedAt || "",
   };
 }
 
@@ -64,6 +65,14 @@ export async function deleteFirebaseSession(id) {
 
   const { db, deleteDoc, doc } = services;
   await deleteDoc(doc(db, SESSIONS_COLLECTION, id));
+}
+
+export async function updateFirebaseSession(id, session) {
+  const services = await getFirebaseServices();
+  if (!services) return;
+
+  const { db, doc, updateDoc } = services;
+  await updateDoc(doc(db, SESSIONS_COLLECTION, id), session);
 }
 
 export async function deleteAllFirebaseSessions(userId) {

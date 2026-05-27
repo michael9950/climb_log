@@ -7,6 +7,7 @@ ClimbLog is a simple climbing session tracker that helps users record their gym 
 - Add climbing sessions with date, gym name, duration, highest grade, condition, and notes.
 - Attach a climbing problem video to a session with Firebase Storage.
 - View saved sessions sorted by newest date first.
+- Edit saved session details.
 - Delete sessions from the log.
 - Track total sessions, current-month visits, highest grade, and average condition.
 - Persist data with Firebase Firestore.

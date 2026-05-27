@@ -37,6 +37,7 @@ import {
   deleteAllFirebaseSessions,
   deleteFirebaseSession,
   subscribeToFirebaseSessions,
+  updateFirebaseSession,
   updateFirebaseSessionUserName,
 } from "./lib/sessionStore";
 import {
@@ -168,6 +169,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [profileName, setProfileName] = useState("");
   const [deletePassword, setDeletePassword] = useState("");
+  const [editingSessionId, setEditingSessionId] = useState("");
   const [videoFile, setVideoFile] = useState(null);
   const [videoInputKey, setVideoInputKey] = useState(0);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState("");
@@ -365,6 +367,32 @@ function App() {
     setVideoInputKey((key) => key + 1);
   };
 
+  const cancelEditSession = () => {
+    setEditingSessionId("");
+    setForm({ ...emptyForm, date: getToday() });
+    clearSelectedVideo();
+    setErrorMessage("");
+  };
+
+  const startEditSession = (session) => {
+    setEditingSessionId(session.id);
+    setForm({
+      date: session.date,
+      gym: session.gym,
+      duration: String(session.duration || ""),
+      grade: session.grade,
+      condition: Number(session.condition) || 3,
+      memo: session.memo || "",
+    });
+    clearSelectedVideo();
+    setErrorMessage("");
+    window.setTimeout(() => {
+      document
+        .getElementById("session-form")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  };
+
   const handleAuthSubmit = async (event) => {
     event.preventDefault();
     setIsAuthWorking(true);
@@ -429,6 +457,9 @@ function App() {
       await signOutAccount();
       setSessions([]);
       setDeletePassword("");
+      setEditingSessionId("");
+      setForm({ ...emptyForm, date: getToday() });
+      clearSelectedVideo();
     } catch (error) {
       setErrorMessage(getFriendlyAuthError(error));
     } finally {
@@ -466,6 +497,9 @@ function App() {
       setSessions([]);
       setCurrentUser(null);
       setDeletePassword("");
+      setEditingSessionId("");
+      setForm({ ...emptyForm, date: getToday() });
+      clearSelectedVideo();
     } catch (error) {
       setErrorMessage(getFriendlyAuthError(error));
     } finally {
@@ -488,7 +522,7 @@ function App() {
       grade: form.grade,
       condition: Number(form.condition),
       memo: form.memo.trim(),
-      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
     setIsSaving(true);
@@ -498,7 +532,7 @@ function App() {
 
     try {
       if (hasFirebaseConfig) {
-        if (videoFile) {
+        if (!editingSessionId && videoFile) {
           uploadedVideo = await uploadFirebaseVideo(
             currentUser.uid,
             videoFile,
@@ -506,21 +540,37 @@ function App() {
           );
         }
 
-        await addFirebaseSession({
-          ...nextSession,
-          ...(uploadedVideo || {}),
-          userId: currentUser.uid,
-          userEmail: currentUser.email || "",
-          userName: getUserName(currentUser),
-        });
+        if (editingSessionId) {
+          await updateFirebaseSession(editingSessionId, nextSession);
+        } else {
+          await addFirebaseSession({
+            ...nextSession,
+            ...(uploadedVideo || {}),
+            userId: currentUser.uid,
+            userEmail: currentUser.email || "",
+            userName: getUserName(currentUser),
+            createdAt: new Date().toISOString(),
+          });
+        }
       } else {
-        setSessions((current) => [
-          { ...nextSession, id: createId() },
-          ...current,
-        ]);
+        if (editingSessionId) {
+          setSessions((current) =>
+            current.map((session) =>
+              session.id === editingSessionId
+                ? { ...session, ...nextSession }
+                : session,
+            ),
+          );
+        } else {
+          setSessions((current) => [
+            { ...nextSession, id: createId(), createdAt: new Date().toISOString() },
+            ...current,
+          ]);
+        }
       }
 
       setForm({ ...emptyForm, date: form.date });
+      setEditingSessionId("");
       clearSelectedVideo();
     } catch (error) {
       if (uploadedVideo?.videoPath) {
@@ -550,6 +600,10 @@ function App() {
         await deleteFirebaseSession(id);
       } else {
         setSessions((current) => current.filter((session) => session.id !== id));
+      }
+
+      if (editingSessionId === id) {
+        cancelEditSession();
       }
     } catch {
       setErrorMessage("기록을 삭제하지 못했습니다. 잠시 후 다시 시도해주세요.");
@@ -588,11 +642,16 @@ function App() {
   ];
 
   const isFirebaseSignedOut = hasFirebaseConfig && !currentUser;
+  const isEditingSession = Boolean(editingSessionId);
+  const editingSession = sessions.find(
+    (session) => session.id === editingSessionId,
+  );
   const isVideoUploadDisabled =
     !hasFirebaseConfig ||
     !currentUser ||
     !hasFirebaseStorageConfig ||
-    isSaving;
+    isSaving ||
+    isEditingSession;
   const isSessionFormDisabled =
     isSaving ||
     isFirebaseSignedOut ||
@@ -843,11 +902,27 @@ function App() {
         </section>
 
         <div className="grid gap-6 lg:grid-cols-[420px_minmax(0,1fr)]">
-          <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+          <section
+            className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm"
+            id="session-form"
+          >
             <div className="mb-5 flex items-center justify-between">
-              <h2 className="text-xl font-black tracking-normal">세션 추가</h2>
+              <div>
+                <h2 className="text-xl font-black tracking-normal">
+                  {isEditingSession ? "세션 수정" : "세션 추가"}
+                </h2>
+                {isEditingSession && editingSession && (
+                  <p className="mt-1 text-sm font-bold text-zinc-500">
+                    {editingSession.gym} 기록을 수정 중입니다.
+                  </p>
+                )}
+              </div>
               <div className="grid h-10 w-10 place-items-center rounded-lg bg-zinc-950 text-white">
-                <Plus className="h-5 w-5" aria-hidden="true" />
+                {isEditingSession ? (
+                  <Pencil className="h-5 w-5" aria-hidden="true" />
+                ) : (
+                  <Plus className="h-5 w-5" aria-hidden="true" />
+                )}
               </div>
             </div>
 
@@ -976,7 +1051,7 @@ function App() {
                 />
               </label>
 
-              {hasFirebaseStorageConfig && (
+              {hasFirebaseStorageConfig && !isEditingSession && (
                 <div className="grid gap-3 text-sm font-bold text-zinc-700">
                   <span className="flex items-center gap-2">
                     <FileVideo className="h-4 w-4 text-cyan-600" />
@@ -1056,18 +1131,33 @@ function App() {
                 </div>
               )}
 
-              <button
-                className="mt-2 inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-zinc-950 px-4 text-base font-black text-white shadow-sm transition hover:bg-zinc-800 focus:outline-none focus:ring-4 focus:ring-emerald-200 disabled:cursor-not-allowed disabled:bg-zinc-400"
-                type="submit"
-                disabled={isSessionFormDisabled}
-              >
-                <Save className="h-5 w-5" aria-hidden="true" />
-                {isFirebaseSignedOut
-                  ? "로그인 필요"
-                  : isSaving
-                    ? "저장 중"
-                    : "기록 저장"}
-              </button>
+              <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
+                <button
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-zinc-950 px-4 text-base font-black text-white shadow-sm transition hover:bg-zinc-800 focus:outline-none focus:ring-4 focus:ring-emerald-200 disabled:cursor-not-allowed disabled:bg-zinc-400"
+                  type="submit"
+                  disabled={isSessionFormDisabled}
+                >
+                  <Save className="h-5 w-5" aria-hidden="true" />
+                  {isFirebaseSignedOut
+                    ? "로그인 필요"
+                    : isSaving
+                      ? "저장 중"
+                      : isEditingSession
+                        ? "수정 저장"
+                        : "기록 저장"}
+                </button>
+                {isEditingSession && (
+                  <button
+                    className="inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 text-base font-black text-zinc-700 shadow-sm transition hover:bg-zinc-50 focus:outline-none focus:ring-4 focus:ring-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-300"
+                    type="button"
+                    onClick={cancelEditSession}
+                    disabled={isSaving}
+                  >
+                    <X className="h-5 w-5" aria-hidden="true" />
+                    취소
+                  </button>
+                )}
+              </div>
             </form>
           </section>
 
@@ -1152,15 +1242,26 @@ function App() {
                           </div>
                         )}
                       </div>
-                      <button
-                        className="grid h-11 w-11 place-items-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-4 focus:ring-rose-100"
-                        type="button"
-                        onClick={() => deleteSession(session.id)}
-                        aria-label={`${session.gym} 기록 삭제`}
-                        title="삭제"
-                      >
-                        <Trash2 className="h-5 w-5" aria-hidden="true" />
-                      </button>
+                      <div className="flex gap-2 md:flex-col">
+                        <button
+                          className="grid h-11 w-11 place-items-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-cyan-200 hover:bg-cyan-50 hover:text-cyan-700 focus:outline-none focus:ring-4 focus:ring-cyan-100"
+                          type="button"
+                          onClick={() => startEditSession(session)}
+                          aria-label={`${session.gym} 기록 수정`}
+                          title="수정"
+                        >
+                          <Pencil className="h-5 w-5" aria-hidden="true" />
+                        </button>
+                        <button
+                          className="grid h-11 w-11 place-items-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-4 focus:ring-rose-100"
+                          type="button"
+                          onClick={() => deleteSession(session.id)}
+                          aria-label={`${session.gym} 기록 삭제`}
+                          title="삭제"
+                        >
+                          <Trash2 className="h-5 w-5" aria-hidden="true" />
+                        </button>
+                      </div>
                     </div>
                   </article>
                 ))}
