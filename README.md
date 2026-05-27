@@ -8,6 +8,7 @@ ClimbLog is a simple climbing session tracker that helps users record their gym 
 - Attach a climbing problem video to a session with Firebase Storage.
 - View saved sessions sorted by newest date first.
 - Edit saved session details.
+- Mark sessions as public or private.
 - Delete sessions from the log.
 - Track total sessions, current-month visits, highest grade, and average condition.
 - Persist data with Firebase Firestore.
@@ -61,6 +62,7 @@ Each session document uses this shape:
   grade: "V5",
   condition: 4,
   memo: "Sent the slab project.",
+  visibility: "private",
   userId: "firebase-auth-uid",
   userEmail: "user@example.com",
   userName: "Alex",
@@ -87,7 +89,7 @@ ClimbLog supports:
 
 ## Firestore Rules
 
-For a logged-in app, use rules like this so each user can only read and edit their own logs:
+For a logged-in app, use rules like this so users can edit only their own logs and read public logs:
 
 ```js
 rules_version = '2';
@@ -96,19 +98,28 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /sessions/{sessionId} {
       allow read: if request.auth != null
-        && resource.data.userId == request.auth.uid;
+        && (
+          resource.data.userId == request.auth.uid
+          || resource.data.visibility == "public"
+        );
 
       allow create: if request.auth != null
-        && request.resource.data.userId == request.auth.uid;
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.visibility in ["private", "public"];
 
-      allow update, delete: if request.auth != null
+      allow update: if request.auth != null
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.visibility in ["private", "public"];
+
+      allow delete: if request.auth != null
         && resource.data.userId == request.auth.uid;
     }
   }
 }
 ```
 
-The public feed feature can be added later by introducing a `visibility` field and allowing reads for public logs.
+The public feed feature can be added later by querying sessions where `visibility == "public"`.
 
 ## Storage Setup
 

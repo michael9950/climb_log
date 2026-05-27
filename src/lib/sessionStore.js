@@ -19,6 +19,7 @@ function normalizeFirestoreSession(documentSnapshot) {
     grade: data.grade || "V0",
     condition: Number(data.condition) || 3,
     memo: data.memo || "",
+    visibility: data.visibility === "public" ? "public" : "private",
     userId: data.userId || "",
     userEmail: data.userEmail || "",
     userName: data.userName || "",

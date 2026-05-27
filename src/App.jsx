@@ -6,8 +6,10 @@ import {
   Clock3,
   Database,
   FileVideo,
+  Globe2,
   LogIn,
   LogOut,
+  LockKeyhole,
   MapPin,
   Mountain,
   Pencil,
@@ -87,6 +89,7 @@ const emptyForm = {
   grade: "V3",
   condition: 3,
   memo: "",
+  visibility: "private",
 };
 
 const emptyAuthForm = {
@@ -335,6 +338,13 @@ function App() {
     }));
   };
 
+  const toggleSessionVisibility = () => {
+    setForm((current) => ({
+      ...current,
+      visibility: current.visibility === "public" ? "private" : "public",
+    }));
+  };
+
   const handleVideoChange = (event) => {
     const file = event.target.files?.[0];
 
@@ -383,6 +393,7 @@ function App() {
       grade: session.grade,
       condition: Number(session.condition) || 3,
       memo: session.memo || "",
+      visibility: session.visibility === "public" ? "public" : "private",
     });
     clearSelectedVideo();
     setErrorMessage("");
@@ -522,6 +533,7 @@ function App() {
       grade: form.grade,
       condition: Number(form.condition),
       memo: form.memo.trim(),
+      visibility: form.visibility,
       updatedAt: new Date().toISOString(),
     };
 
@@ -1051,6 +1063,29 @@ function App() {
                 />
               </label>
 
+              <label className="flex min-h-14 items-center justify-between gap-4 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-3 text-sm font-bold text-zinc-700">
+                <span className="flex min-w-0 items-center gap-2">
+                  {form.visibility === "public" ? (
+                    <Globe2
+                      className="h-4 w-4 shrink-0 text-cyan-600"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <LockKeyhole
+                      className="h-4 w-4 shrink-0 text-zinc-500"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span>공개 기록</span>
+                </span>
+                <input
+                  className="h-5 w-5 shrink-0 accent-cyan-600"
+                  type="checkbox"
+                  checked={form.visibility === "public"}
+                  onChange={toggleSessionVisibility}
+                />
+              </label>
+
               {hasFirebaseStorageConfig && !isEditingSession && (
                 <div className="grid gap-3 text-sm font-bold text-zinc-700">
                   <span className="flex items-center gap-2">
@@ -1198,6 +1233,23 @@ function App() {
                           </span>
                           <span className="rounded-full bg-lime-100 px-3 py-1 text-sm font-black text-lime-900">
                             컨디션 {session.condition}/5
+                          </span>
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-black ${
+                              session.visibility === "public"
+                                ? "bg-cyan-100 text-cyan-900"
+                                : "bg-zinc-100 text-zinc-600"
+                            }`}
+                          >
+                            {session.visibility === "public" ? (
+                              <Globe2 className="h-4 w-4" aria-hidden="true" />
+                            ) : (
+                              <LockKeyhole
+                                className="h-4 w-4"
+                                aria-hidden="true"
+                              />
+                            )}
+                            {session.visibility === "public" ? "공개" : "비공개"}
                           </span>
                         </div>
                         <h3 className="truncate text-lg font-black tracking-normal">
