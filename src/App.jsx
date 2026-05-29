@@ -97,7 +97,21 @@ const emptyAuthForm = {
   displayName: "",
   email: "",
   password: "",
+  confirmPassword: "",
 };
+
+function getPasswordChecks(password) {
+  return {
+    minLength: password.length >= 8,
+    uppercase: /[A-Z]/.test(password),
+    lowercase: /[a-z]/.test(password),
+    special: /[^A-Za-z0-9]/.test(password),
+  };
+}
+
+function isStrongPassword(password) {
+  return Object.values(getPasswordChecks(password)).every(Boolean);
+}
 
 function loadSessions() {
   try {
@@ -160,6 +174,7 @@ function normalizeAuthUser(user) {
     uid: user.uid,
     email: user.email || "",
     displayName: user.displayName || "",
+    emailVerified: Boolean(user.emailVerified),
   };
 }
 
@@ -172,6 +187,7 @@ function App() {
   const [form, setForm] = useState(emptyForm);
   const [authForm, setAuthForm] = useState(emptyAuthForm);
   const [authMode, setAuthMode] = useState("login");
+  const [accountPanel, setAccountPanel] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
   const [profileName, setProfileName] = useState("");
   const [deletePassword, setDeletePassword] = useState("");
@@ -186,6 +202,7 @@ function App() {
   const [isPublicLoading, setIsPublicLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
 
   useEffect(() => {
     if (hasFirebaseConfig) return undefined;
@@ -216,11 +233,26 @@ function App() {
     subscribeToAuthChanges(
       (user) => {
         if (!isMounted) return;
+
+        if (user && !user.emailVerified) {
+          setCurrentUser(null);
+          setProfileName("");
+          setAccountPanel("");
+          setIsAuthLoading(false);
+          setStatusMessage("이메일 인증 후 다시 로그인해주세요.");
+          signOutAccount().catch(() => {});
+          return;
+        }
+
         const nextUser = normalizeAuthUser(user);
         setCurrentUser(nextUser);
         setProfileName(user?.displayName || "");
+        setAccountPanel("");
         setIsAuthLoading(false);
         setErrorMessage("");
+        if (nextUser) {
+          setStatusMessage("");
+        }
       },
       () => {
         if (!isMounted) return;
@@ -413,6 +445,13 @@ function App() {
     }));
   };
 
+  const switchAuthMode = (mode) => {
+    setAuthMode(mode);
+    setAuthForm(emptyAuthForm);
+    setErrorMessage("");
+    setStatusMessage("");
+  };
+
   const toggleSessionVisibility = () => {
     setForm((current) => ({
       ...current,
@@ -481,23 +520,47 @@ function App() {
 
   const handleAuthSubmit = async (event) => {
     event.preventDefault();
-    setIsAuthWorking(true);
     setErrorMessage("");
+    setStatusMessage("");
+
+    if (authMode === "signup") {
+      if (!isStrongPassword(authForm.password)) {
+        setErrorMessage(
+          "비밀번호는 영문 대문자, 영문 소문자, 특수기호를 포함해 8자 이상으로 입력해주세요.",
+        );
+        return;
+      }
+
+      if (authForm.password !== authForm.confirmPassword) {
+        setErrorMessage("비밀번호 확인이 일치하지 않습니다.");
+        return;
+      }
+    }
+
+    setIsAuthWorking(true);
 
     try {
-      const user =
-        authMode === "signup"
-          ? await createAccount(authForm)
-          : await signIn(authForm);
+      if (authMode === "signup") {
+        await createAccount(authForm);
+        setAuthMode("login");
+        setAuthForm({
+          ...emptyAuthForm,
+          email: authForm.email,
+        });
+        setStatusMessage(
+          "인증 메일을 보냈습니다. 이메일 인증을 완료한 뒤 로그인해주세요.",
+        );
+        return;
+      }
+
+      const user = await signIn(authForm);
 
       if (user) {
         setCurrentUser({
           ...normalizeAuthUser(user),
-          displayName: authMode === "signup" ? authForm.displayName : user.displayName,
+          displayName: user.displayName,
         });
-        setProfileName(
-          authMode === "signup" ? authForm.displayName : user.displayName || "",
-        );
+        setProfileName(user.displayName || "");
       }
 
       setAuthForm(emptyAuthForm);
@@ -527,6 +590,8 @@ function App() {
           getUserName(nextUser),
         );
         setCurrentUser(nextUser);
+        setAccountPanel("");
+        setStatusMessage("회원정보를 수정했습니다.");
       }
     } catch (error) {
       setErrorMessage(getFriendlyAuthError(error));
@@ -544,10 +609,12 @@ function App() {
       setSessions([]);
       setPublicSessions([]);
       setRecordView("mine");
+      setAccountPanel("");
       setDeletePassword("");
       setEditingSessionId("");
       setForm({ ...emptyForm, date: getToday() });
       clearSelectedVideo();
+      setStatusMessage("");
     } catch (error) {
       setErrorMessage(getFriendlyAuthError(error));
     } finally {
@@ -586,10 +653,12 @@ function App() {
       setPublicSessions([]);
       setRecordView("mine");
       setCurrentUser(null);
+      setAccountPanel("");
       setDeletePassword("");
       setEditingSessionId("");
       setForm({ ...emptyForm, date: getToday() });
       clearSelectedVideo();
+      setStatusMessage("");
     } catch (error) {
       setErrorMessage(getFriendlyAuthError(error));
     } finally {
@@ -737,6 +806,15 @@ function App() {
   const editingSession = sessions.find(
     (session) => session.id === editingSessionId,
   );
+  const signupPasswordChecks = getPasswordChecks(authForm.password);
+  const isSignupPasswordStrong = Object.values(signupPasswordChecks).every(
+    Boolean,
+  );
+  const isAuthSubmitDisabled =
+    isAuthWorking ||
+    (authMode === "signup" &&
+      (!isSignupPasswordStrong ||
+        authForm.password !== authForm.confirmPassword));
   const isVideoUploadDisabled =
     !hasFirebaseConfig ||
     !currentUser ||
@@ -789,6 +867,12 @@ function App() {
           </div>
         )}
 
+        {statusMessage && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
+            {statusMessage}
+          </div>
+        )}
+
         {hasFirebaseConfig && (
           <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
             {isAuthLoading ? (
@@ -797,73 +881,127 @@ function App() {
                 로그인 상태 확인 중
               </div>
             ) : currentUser ? (
-              <div className="grid gap-5 xl:grid-cols-[1fr_1fr_auto] xl:items-end">
-                <div>
-                  <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">
-                    <User className="h-4 w-4" aria-hidden="true" />
-                    로그인됨
+              <div className="grid gap-4">
+                <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
+                  <div>
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">
+                        <User className="h-4 w-4" aria-hidden="true" />
+                        로그인됨
+                      </span>
+                      <span className="inline-flex items-center gap-2 rounded-full bg-cyan-100 px-3 py-1 text-xs font-black text-cyan-800">
+                        인증 완료
+                      </span>
+                    </div>
+                    <p className="text-2xl font-black tracking-normal">
+                      {getUserName(currentUser)}
+                    </p>
+                    <p className="mt-1 break-all text-sm font-semibold text-zinc-500">
+                      {currentUser.email}
+                    </p>
                   </div>
-                  <p className="text-2xl font-black tracking-normal">
-                    {getUserName(currentUser)}
-                  </p>
-                  <p className="mt-1 break-all text-sm font-semibold text-zinc-500">
-                    {currentUser.email}
-                  </p>
-                </div>
 
-                <form className="grid gap-2" onSubmit={handleProfileSubmit}>
-                  <label className="grid gap-2 text-sm font-bold text-zinc-700">
-                    닉네임
-                    <input
-                      className="h-11 rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-base font-semibold outline-none transition focus:border-zinc-950 focus:bg-white"
-                      type="text"
-                      value={profileName}
-                      onChange={(event) => setProfileName(event.target.value)}
-                      placeholder="클라이머 이름"
-                    />
-                  </label>
-                  <button
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 text-sm font-black text-zinc-800 transition hover:border-zinc-300 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400"
-                    type="submit"
-                    disabled={isAuthWorking}
-                  >
-                    <Pencil className="h-4 w-4" aria-hidden="true" />
-                    수정
-                  </button>
-                </form>
-
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                  <button
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-zinc-950 px-4 text-sm font-black text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
-                    type="button"
-                    onClick={handleSignOut}
-                    disabled={isAuthWorking}
-                  >
-                    <LogOut className="h-4 w-4" aria-hidden="true" />
-                    로그아웃
-                  </button>
-                  <form
-                    className="grid gap-2 sm:grid-cols-[1fr_auto] xl:grid-cols-1"
-                    onSubmit={handleDeleteAccount}
-                  >
-                    <input
-                      className="h-11 min-w-0 rounded-lg border border-rose-200 bg-rose-50 px-3 text-sm font-semibold outline-none transition placeholder:text-rose-300 focus:border-rose-500 focus:bg-white"
-                      type="password"
-                      value={deletePassword}
-                      onChange={(event) => setDeletePassword(event.target.value)}
-                      placeholder="탈퇴 비밀번호"
-                      autoComplete="current-password"
-                    />
+                  <div className="grid gap-2 sm:grid-cols-3">
                     <button
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-rose-200 bg-white px-4 text-sm font-black text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-rose-300"
-                      type="submit"
+                      className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border px-4 text-sm font-black transition disabled:cursor-not-allowed disabled:text-zinc-400 ${
+                        accountPanel === "profile"
+                          ? "border-zinc-950 bg-zinc-950 text-white"
+                          : "border-zinc-200 bg-white text-zinc-800 hover:border-zinc-300 hover:bg-zinc-50"
+                      }`}
+                      type="button"
+                      onClick={() =>
+                        setAccountPanel((panel) =>
+                          panel === "profile" ? "" : "profile",
+                        )
+                      }
+                      disabled={isAuthWorking}
+                    >
+                      <Pencil className="h-4 w-4" aria-hidden="true" />
+                      회원정보 수정
+                    </button>
+                    <button
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-zinc-950 px-4 text-sm font-black text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+                      type="button"
+                      onClick={handleSignOut}
+                      disabled={isAuthWorking}
+                    >
+                      <LogOut className="h-4 w-4" aria-hidden="true" />
+                      로그아웃
+                    </button>
+                    <button
+                      className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border px-4 text-sm font-black transition disabled:cursor-not-allowed disabled:text-rose-300 ${
+                        accountPanel === "delete"
+                          ? "border-rose-500 bg-rose-50 text-rose-700"
+                          : "border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+                      }`}
+                      type="button"
+                      onClick={() =>
+                        setAccountPanel((panel) =>
+                          panel === "delete" ? "" : "delete",
+                        )
+                      }
                       disabled={isAuthWorking}
                     >
                       <ShieldAlert className="h-4 w-4" aria-hidden="true" />
                       탈퇴
                     </button>
-                  </form>
+                  </div>
                 </div>
+
+                {accountPanel === "profile" && (
+                  <form
+                    className="grid gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 sm:grid-cols-[1fr_auto] sm:items-end"
+                    onSubmit={handleProfileSubmit}
+                  >
+                    <label className="grid gap-2 text-sm font-bold text-zinc-700">
+                      닉네임
+                      <input
+                        className="h-11 rounded-lg border border-zinc-200 bg-white px-3 text-base font-semibold outline-none transition focus:border-zinc-950"
+                        type="text"
+                        value={profileName}
+                        onChange={(event) => setProfileName(event.target.value)}
+                        placeholder="클라이머 이름"
+                      />
+                    </label>
+                    <button
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-zinc-950 px-4 text-sm font-black text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+                      type="submit"
+                      disabled={isAuthWorking}
+                    >
+                      <Save className="h-4 w-4" aria-hidden="true" />
+                      저장
+                    </button>
+                  </form>
+                )}
+
+                {accountPanel === "delete" && (
+                  <form
+                    className="grid gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 sm:grid-cols-[1fr_auto] sm:items-end"
+                    onSubmit={handleDeleteAccount}
+                  >
+                    <label className="grid gap-2 text-sm font-bold text-rose-700">
+                      탈퇴 비밀번호
+                      <input
+                        className="h-11 min-w-0 rounded-lg border border-rose-200 bg-white px-3 text-sm font-semibold outline-none transition placeholder:text-rose-300 focus:border-rose-500"
+                        type="password"
+                        value={deletePassword}
+                        onChange={(event) =>
+                          setDeletePassword(event.target.value)
+                        }
+                        placeholder="현재 비밀번호"
+                        autoComplete="current-password"
+                      />
+                    </label>
+                    <button
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-rose-600 px-4 text-sm font-black text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-rose-300"
+                      type="submit"
+                      disabled={isAuthWorking}
+                    >
+                      <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+                      계정 탈퇴
+                    </button>
+                  </form>
+                )}
               </div>
             ) : (
               <form
@@ -879,7 +1017,7 @@ function App() {
                           : "text-zinc-500 hover:text-zinc-900"
                       }`}
                       type="button"
-                      onClick={() => setAuthMode("login")}
+                      onClick={() => switchAuthMode("login")}
                     >
                       <LogIn className="h-4 w-4" aria-hidden="true" />
                       로그인
@@ -891,7 +1029,7 @@ function App() {
                           : "text-zinc-500 hover:text-zinc-900"
                       }`}
                       type="button"
-                      onClick={() => setAuthMode("signup")}
+                      onClick={() => switchAuthMode("signup")}
                     >
                       <UserPlus className="h-4 w-4" aria-hidden="true" />
                       회원가입
@@ -935,19 +1073,93 @@ function App() {
                       name="password"
                       value={authForm.password}
                       onChange={handleAuthChange}
-                      placeholder="6자 이상"
+                      placeholder={
+                        authMode === "signup"
+                          ? "8자 이상, 대소문자/특수기호"
+                          : "비밀번호"
+                      }
                       autoComplete={
                         authMode === "signup" ? "new-password" : "current-password"
                       }
                       required
                     />
                   </label>
+                  {authMode === "signup" && (
+                    <>
+                      <label className="grid gap-2 text-sm font-bold text-zinc-700">
+                        비밀번호 확인
+                        <input
+                          className="h-11 rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-base font-semibold outline-none transition focus:border-zinc-950 focus:bg-white"
+                          type="password"
+                          name="confirmPassword"
+                          value={authForm.confirmPassword}
+                          onChange={handleAuthChange}
+                          placeholder="비밀번호 다시 입력"
+                          autoComplete="new-password"
+                          required
+                        />
+                      </label>
+                      <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-black text-zinc-500 sm:col-span-2">
+                        <div className="flex flex-wrap gap-x-4 gap-y-1">
+                          <span
+                            className={
+                              signupPasswordChecks.minLength
+                                ? "text-emerald-700"
+                                : ""
+                            }
+                          >
+                            8자 이상
+                          </span>
+                          <span
+                            className={
+                              signupPasswordChecks.uppercase
+                                ? "text-emerald-700"
+                                : ""
+                            }
+                          >
+                            대문자
+                          </span>
+                          <span
+                            className={
+                              signupPasswordChecks.lowercase
+                                ? "text-emerald-700"
+                                : ""
+                            }
+                          >
+                            소문자
+                          </span>
+                          <span
+                            className={
+                              signupPasswordChecks.special
+                                ? "text-emerald-700"
+                                : ""
+                            }
+                          >
+                            특수기호
+                          </span>
+                          <span
+                            className={
+                              authForm.confirmPassword &&
+                              authForm.password === authForm.confirmPassword
+                                ? "text-emerald-700"
+                                : ""
+                            }
+                          >
+                            비밀번호 일치
+                          </span>
+                        </div>
+                        <p className="mt-2 font-bold text-cyan-700">
+                          가입 후 인증 메일을 확인해야 로그인할 수 있습니다.
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <button
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-zinc-950 px-5 text-sm font-black text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
                   type="submit"
-                  disabled={isAuthWorking}
+                  disabled={isAuthSubmitDisabled}
                 >
                   {authMode === "signup" ? (
                     <UserPlus className="h-4 w-4" aria-hidden="true" />

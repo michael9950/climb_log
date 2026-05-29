@@ -12,7 +12,13 @@ export async function createAccount({ displayName, email, password }) {
   const services = await getFirebaseAuthServices();
   if (!services) return null;
 
-  const { auth, createUserWithEmailAndPassword, updateProfile } = services;
+  const {
+    auth,
+    createUserWithEmailAndPassword,
+    sendEmailVerification,
+    signOut,
+    updateProfile,
+  } = services;
   const credential = await createUserWithEmailAndPassword(
     auth,
     email,
@@ -24,6 +30,9 @@ export async function createAccount({ displayName, email, password }) {
     await updateProfile(credential.user, { displayName: trimmedDisplayName });
   }
 
+  await sendEmailVerification(credential.user);
+  await signOut(auth);
+
   return credential.user;
 }
 
@@ -31,9 +40,25 @@ export async function signIn({ email, password }) {
   const services = await getFirebaseAuthServices();
   if (!services) return null;
 
-  const { auth, signInWithEmailAndPassword } = services;
+  const {
+    auth,
+    reload,
+    sendEmailVerification,
+    signInWithEmailAndPassword,
+    signOut,
+  } = services;
   const credential = await signInWithEmailAndPassword(auth, email, password);
-  return credential.user;
+  await reload(credential.user);
+
+  const user = auth.currentUser || credential.user;
+
+  if (!user.emailVerified) {
+    await sendEmailVerification(user);
+    await signOut(auth);
+    throw new Error("auth/email-not-verified");
+  }
+
+  return user;
 }
 
 export async function signOutAccount() {
@@ -96,7 +121,11 @@ export function getFriendlyAuthError(error) {
     case "auth/unauthorized-domain":
       return "Firebase Authentication의 Authorized domains에 현재 도메인을 추가해주세요.";
     case "auth/weak-password":
-      return "비밀번호는 6자 이상으로 입력해주세요.";
+      return "비밀번호는 영문 대문자, 영문 소문자, 특수기호를 포함해 8자 이상으로 입력해주세요.";
+    case "auth/email-not-verified":
+      return "이메일 인증이 필요합니다. 받은 메일함을 확인해주세요. 인증 메일을 다시 보냈습니다.";
+    case "auth/too-many-requests":
+      return "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.";
     case "auth/requires-recent-login":
       return "보안을 위해 다시 로그인한 뒤 시도해주세요.";
     case "auth/no-current-user":

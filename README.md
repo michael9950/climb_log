@@ -11,6 +11,7 @@ ClimbLog is a simple climbing session tracker that helps users record their gym 
 - Edit saved session details.
 - Mark sessions as public or private.
 - Delete sessions from the log.
+- Verify email before login.
 - Track total sessions, current-month visits, highest grade, and average condition.
 - Persist data with Firebase Firestore.
 - Fall back to `localStorage` when Firebase is not configured.
@@ -83,10 +84,11 @@ In Firebase Console, open Authentication > Sign-in method and enable Email/Passw
 
 ClimbLog supports:
 
-- Email/password sign up
+- Email/password sign up with email verification
+- Password confirmation and a minimum 8-character password with uppercase, lowercase, and special characters
 - Login and logout
-- Display name updates
-- Account deletion
+- Collapsed display name updates
+- Collapsed account deletion
 - User-owned climbing logs
 
 ## Firestore Rules

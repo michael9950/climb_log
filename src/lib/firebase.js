@@ -75,6 +75,8 @@ export function getFirebaseAuthServices() {
         EmailAuthProvider: authModule.EmailAuthProvider,
         onAuthStateChanged: authModule.onAuthStateChanged,
         reauthenticateWithCredential: authModule.reauthenticateWithCredential,
+        reload: authModule.reload,
+        sendEmailVerification: authModule.sendEmailVerification,
         signInWithEmailAndPassword: authModule.signInWithEmailAndPassword,
         signOut: authModule.signOut,
         updateProfile: authModule.updateProfile,
